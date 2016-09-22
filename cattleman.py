@@ -24,7 +24,7 @@ class cattleman(object):
             if rancher_env == project['name']:
                 return project['id']
             else:
-                logger.error("Specificed rancher environment or 'Default' environment does not exist")
+                logger.error("Specificed rancher environment or 'Default' does not exist")
 
     def test_connection(self):
         logger.info("Connecting to the Rancher API...")
@@ -44,6 +44,17 @@ class cattleman(object):
             memory[host['id']] = host['info']['memoryInfo']
         return memory
 
+    def decider(self):
+        memory = self.get_all_memory_info()
+        hosts = len(memory.keys())
+        low_mem = []
+        for host, mem in memory.items():
+            if mem['memAvailable'] / mem['memTotal'] <= 0.35:
+                low_mem.append(host)
+        if len(low_mem) == hosts:
+            logger.info("Should scale up")
+        else:
+            logger.info("Doing nothing..")
 
 if __name__ == "__main__":
     # setup_logging
@@ -57,3 +68,4 @@ if __name__ == "__main__":
     logger.debug('Logging Started')
     app = cattleman()
     app.test_connection()
+    app.decider()
