@@ -4,6 +4,7 @@ import sys
 import requests
 import logging
 from requests.auth import HTTPBasicAuth
+import boto3
 
 
 class cattleman(object):
@@ -11,8 +12,9 @@ class cattleman(object):
         self.api_user = os.getenv('RANCHER_USER')
         self.api_key = os.getenv('RANCHER_KEY')
         self.api_url = os.getenv('RANCHER_URL')
-        if not self.api_user or not self.api_key or not self.api_url:
-            logger.error("RANCHER_USER, RANCHER_KEY and RANCHER_URL are required env vars")
+        self.asg_name = os.getenv('ASG_NAME')
+        if not self.api_user or not self.api_key or not self.api_url or not self.asg_name:
+            logger.error("RANCHER_USER, RANCHER_KEY, RANCHER_URL and ASG_NAME are required env vars")
             sys.exit(1)
         self.api_project = self.get_project(os.getenv('RANCHER_ENV', 'Default'))
 
@@ -52,9 +54,18 @@ class cattleman(object):
             if mem['memAvailable'] / mem['memTotal'] <= 0.35:
                 low_mem.append(host)
         if len(low_mem) == hosts:
-            logger.info("Should scale up")
+            logger.info("Trigger Scale Up")
+            self.scale_up()
         else:
             logger.info("Doing nothing..")
+
+    def scale_up(self):
+        client = boto3.client('autoscaling')
+        current_capacity = client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.asg_name])['AutoScalingGroups'][0]['DesiredCapacity']
+        desired_capacity = current_capacity + 1
+        response = client.set_desired_capacity(
+                       AutoScalingGroupName=self.asg_name,
+                       DesiredCapacity=desired_capacity)
 
 if __name__ == "__main__":
     # setup_logging
