@@ -3,8 +3,10 @@ import os
 import sys
 import requests
 import logging
-from requests.auth import HTTPBasicAuth
 import boto3
+import pprint
+from requests.auth import HTTPBasicAuth
+from botocore.exceptions import ClientError
 
 
 class cattleman(object):
@@ -48,6 +50,7 @@ class cattleman(object):
 
     def decider(self):
         memory = self.get_all_memory_info()
+        logger.debug("Memory Dict:\n" + pprint.pformat(memory))
         hosts = len(memory.keys())
         low_mem = []
         for host, mem in memory.items():
@@ -63,18 +66,23 @@ class cattleman(object):
         client = boto3.client('autoscaling')
         current_capacity = client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.asg_name])['AutoScalingGroups'][0]['DesiredCapacity']
         desired_capacity = current_capacity + 1
-        response = client.set_desired_capacity(
-                       AutoScalingGroupName=self.asg_name,
-                       DesiredCapacity=desired_capacity)
+        try:
+            response = client.set_desired_capacity(
+                          AutoScalingGroupName=self.asg_name,
+                          DesiredCapacity=desired_capacity,
+                          HonorCooldown=True)
+        except ClientError as e:
+            logger.error("Cooldown in effect, no action taken")
+
 
 if __name__ == "__main__":
     # setup_logging
     logger = logging.getLogger('Cattleman')
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     ch = logging.StreamHandler()
     ch.setFormatter(formatter)
-    ch.setLevel(logging.INFO)
+    ch.setLevel(logging.DEBUG)
     logger.addHandler(ch)
     logger.debug('Logging Started')
     app = cattleman()
