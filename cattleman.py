@@ -5,8 +5,11 @@ import requests
 import logging
 import boto3
 import pprint
+import threading
+import socket
 from requests.auth import HTTPBasicAuth
 from botocore.exceptions import ClientError
+from time import sleep
 
 
 class cattleman(object):
@@ -75,16 +78,59 @@ class cattleman(object):
             logger.error("Cooldown in effect, no action taken")
 
 
+def ping(delay, run_event):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_address = ('0.0.0.0', 1313)
+    logger.debug('starting up on {0}'.format(server_address))
+    sock.bind(server_address)
+    sock.listen(1)
+
+    while run_event.is_set():
+        logger.debug('waiting for a connection')
+        connection, client_address = sock.accept()
+        try:
+            logger.debug('client connected: {0}'.format(client_address))
+            message = b'PONG'
+            connection.sendall(message)
+            connection.close()
+        finally:
+            connection.close()
+
+
+def run_cattleman(delay, run_event):
+    app = cattleman()
+    app.test_connection()
+    while run_event.is_set():
+        app.decider()
+        logger.info('Sleeping 1 minute')
+        sleep(60)
+
 if __name__ == "__main__":
     # setup_logging
     logger = logging.getLogger('Cattleman')
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     ch = logging.StreamHandler()
     ch.setFormatter(formatter)
-    ch.setLevel(logging.DEBUG)
+    ch.setLevel(logging.INFO)
     logger.addHandler(ch)
     logger.debug('Logging Started')
-    app = cattleman()
-    app.test_connection()
-    app.decider()
+
+    run_event = threading.Event()
+    run_event.set()
+
+    jobs = []
+
+    main_thread = threading.Thread(target=run_cattleman, args=(1, run_event))
+    jobs.append(main_thread)
+
+    status_thread = threading.Thread(target=ping, args=(1, run_event))
+    jobs.append(status_thread)
+
+    try:
+        for job in jobs:
+            job.start()
+    except (KeyboardInterrupt, SystemExit):
+        run_event.clear()
+        for job in jobs:
+            job.join()
